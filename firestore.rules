@@ -1,0 +1,1026 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net — default deny everything
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ==================== PRIMITIVES & IDENTITY ====================
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isEmailVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isBootstrappedSuperAdmin() {
+      return isEmailVerified() && request.auth.token.email == 'highsky2711@gmail.com';
+    }
+
+    function userDocExists() {
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function userRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    function userActive() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'active';
+    }
+
+    function isSuperAdmin() {
+      return isBootstrappedSuperAdmin() ||
+        (isEmailVerified() && userDocExists() && userRole() == 'super_admin' && userActive());
+    }
+
+    function isLabelManager() {
+      return isEmailVerified() && userDocExists() && userRole() == 'label_manager' && userActive();
+    }
+
+    function isStaff() {
+      return isSuperAdmin() || isLabelManager();
+    }
+
+    function isOwnerUid(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function isOptString(data, key, maxLen) {
+      return !(key in data) || (data[key] is string && data[key].size() <= maxLen);
+    }
+
+    function isOptNumber(data, key, minVal, maxVal) {
+      return !(key in data) || (data[key] is number && data[key] >= minVal && data[key] <= maxVal);
+    }
+
+    function isOptBool(data, key) {
+      return !(key in data) || (data[key] is bool);
+    }
+
+    function isStringList(val, maxItems) {
+      return val is list && val.size() <= maxItems && (val.size() == 0 || val[0] is string);
+    }
+
+    function isNumberList(val, maxItems) {
+      return val is list && val.size() <= maxItems && (val.size() == 0 || val[0] is number);
+    }
+
+    // ==================== CONNECTION TEST ====================
+    match /test/connection {
+      allow get: if isSignedIn();
+    }
+
+    // ==================== 1. USERS (PII ISOLATED) ====================
+    function isValidUser(data, userId) {
+      return data.keys().hasAll(['uid', 'displayName', 'email', 'role', 'status', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'displayName', 'email', 'photoURL', 'role', 'status', 'emailNotifications', 'createdAt', 'updatedAt'])
+        && data.uid is string && data.uid == userId && isValidId(data.uid)
+        && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 120
+        && data.email is string && data.email.size() >= 3 && data.email.size() <= 200
+        && isOptString(data, 'photoURL', 1000)
+        && data.role in ['super_admin', 'artist', 'label_manager']
+        && data.status in ['active', 'suspended']
+        && isOptBool(data, 'emailNotifications')
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    match /users/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && (isOwnerUid(userId) || isSuperAdmin());
+      allow list: if isSignedIn() && (isBootstrappedSuperAdmin() || resource.data.uid == request.auth.uid || isSuperAdmin());
+      allow create: if isEmailVerified()
+        && isValidId(userId)
+        && isValidUser(incoming(), userId)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (
+          (isOwnerUid(userId) && incoming().email == request.auth.token.email && incoming().status == 'active' && (
+            (isBootstrappedSuperAdmin() && incoming().role == 'super_admin') ||
+            (!isBootstrappedSuperAdmin() && incoming().role == 'artist')
+          )) ||
+          isSuperAdmin()
+        );
+      allow update: if isEmailVerified()
+        && isValidId(userId)
+        && isValidUser(incoming(), userId)
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          (isSuperAdmin() && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'role', 'status', 'emailNotifications', 'updatedAt'])) ||
+          (isOwnerUid(userId) && incoming().role == existing().role && incoming().status == existing().status && incoming().email == existing().email && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'emailNotifications', 'updatedAt']))
+        );
+      allow delete: if false;
+    }
+
+    // ==================== 2. ARTISTS ====================
+    function isValidArtist(data, artistId) {
+      return data.keys().hasAll(['id', 'name', 'professions', 'genres', 'languages', 'label', 'biography', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly([
+          'id', 'name', 'professions', 'genres', 'languages', 'label',
+          'primaryMarket', 'distributionScope', 'biography', 'profilePhotoUrl',
+          'spotifyUrl', 'youtubeUrl', 'instagramUrl', 'facebookUrl',
+          'updatedBy', 'createdAt', 'updatedAt'
+        ])
+        && data.id is string && data.id == artistId && isValidId(data.id)
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 120
+        && isStringList(data.professions, 10)
+        && isStringList(data.genres, 15)
+        && isStringList(data.languages, 15)
+        && data.label is string && data.label.size() >= 1 && data.label.size() <= 120
+        && isOptString(data, 'primaryMarket', 100)
+        && isOptString(data, 'distributionScope', 100)
+        && data.biography is string && data.biography.size() <= 4000
+        && isOptString(data, 'profilePhotoUrl', 350000)
+        && isOptString(data, 'spotifyUrl', 500)
+        && isOptString(data, 'youtubeUrl', 500)
+        && isOptString(data, 'instagramUrl', 500)
+        && isOptString(data, 'facebookUrl', 500)
+        && isOptString(data, 'updatedBy', 128)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    match /artists/{artistId} {
+      allow get: if isSignedIn() && isValidId(artistId);
+      allow list: if isSignedIn() && resource.data.label == 'Music High Sky';
+      allow create: if isEmailVerified()
+        && isValidId(artistId)
+        && isValidArtist(incoming(), artistId)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && isSuperAdmin();
+      allow update: if isEmailVerified()
+        && isValidId(artistId)
+        && isValidArtist(incoming(), artistId)
+        && incoming().id == existing().id
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && isSuperAdmin()
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'name', 'professions', 'genres', 'languages', 'label',
+          'primaryMarket', 'distributionScope', 'biography', 'profilePhotoUrl',
+          'spotifyUrl', 'youtubeUrl', 'instagramUrl', 'facebookUrl',
+          'updatedBy', 'updatedAt'
+        ]);
+      allow delete: if false;
+    }
+
+    // ==================== 3. RELEASES ====================
+    function isValidReleaseStatus(st) {
+      return st in [
+        'Draft', 'Submitted', 'Under Review', 'Metadata Correction Required',
+        'Approved', 'Scheduled', 'Processing', 'Delivered', 'Live',
+        'Rejected', 'Takedown Requested', 'Taken Down', 'Archived'
+      ];
+    }
+
+    function isValidRelease(data) {
+      return data.keys().hasAll([
+          'releaseCode', 'releaseType', 'title', 'primaryArtist', 'genre', 'language',
+          'distributorLabel', 'artistCredit', 'labelCredit', 'status',
+          'submittedBy', 'submissionDate', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'releaseCode', 'releaseType', 'title', 'subtitle', 'primaryArtist', 'featuredArtist',
+          'singer', 'lyricist', 'composer', 'musicProducer', 'musicDirector',
+          'mixingEngineer', 'masteringEngineer', 'genre', 'subgenre', 'language', 'mood',
+          'explicitContent', 'originalReleaseDate', 'plannedReleaseDate', 'releaseTime',
+          'copyrightYear', 'copyrightOwner', 'phonographicCopyright', 'publishingCopyright',
+          'distributorLabel', 'artistCredit', 'labelCredit', 'creditNotes',
+          'targetPlatforms', 'status', 'reviewNotes', 'artworkPreview', 'smartLinkSlug',
+          'featured', 'driveFileId', 'sourceOrigin',
+          'submittedBy', 'submittedByName', 'submissionDate', 'createdAt', 'updatedAt'
+        ])
+        && data.releaseCode is string && data.releaseCode.size() >= 3 && data.releaseCode.size() <= 40
+        && data.releaseType in ['audio', 'video']
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 200
+        && isOptString(data, 'subtitle', 200)
+        && data.primaryArtist is string && data.primaryArtist.size() >= 1 && data.primaryArtist.size() <= 150
+        && isOptString(data, 'featuredArtist', 200)
+        && isOptString(data, 'singer', 200)
+        && isOptString(data, 'lyricist', 200)
+        && isOptString(data, 'composer', 200)
+        && isOptString(data, 'musicProducer', 200)
+        && isOptString(data, 'musicDirector', 200)
+        && isOptString(data, 'mixingEngineer', 200)
+        && isOptString(data, 'masteringEngineer', 200)
+        && data.genre is string && data.genre.size() >= 1 && data.genre.size() <= 100
+        && isOptString(data, 'subgenre', 100)
+        && data.language is string && data.language.size() >= 1 && data.language.size() <= 100
+        && isOptString(data, 'mood', 100)
+        && isOptBool(data, 'explicitContent')
+        && isOptString(data, 'originalReleaseDate', 40)
+        && isOptString(data, 'plannedReleaseDate', 40)
+        && isOptString(data, 'releaseTime', 20)
+        && isOptString(data, 'copyrightYear', 10)
+        && isOptString(data, 'copyrightOwner', 200)
+        && isOptString(data, 'phonographicCopyright', 250)
+        && isOptString(data, 'publishingCopyright', 250)
+        && data.distributorLabel is string && data.distributorLabel.size() >= 1 && data.distributorLabel.size() <= 120
+        && data.artistCredit is string && data.artistCredit.size() >= 1 && data.artistCredit.size() <= 150
+        && data.labelCredit is string && data.labelCredit.size() >= 1 && data.labelCredit.size() <= 150
+        && isOptString(data, 'creditNotes', 500)
+        && (!('targetPlatforms' in data) || isStringList(data.targetPlatforms, 20))
+        && isValidReleaseStatus(data.status)
+        && isOptString(data, 'reviewNotes', 1000)
+        && isOptString(data, 'artworkPreview', 350000)
+        && isOptString(data, 'smartLinkSlug', 120)
+        && isOptBool(data, 'featured')
+        && isOptString(data, 'driveFileId', 200)
+        && isOptString(data, 'sourceOrigin', 100)
+        && data.submittedBy is string && isValidId(data.submittedBy)
+        && isOptString(data, 'submittedByName', 120)
+        && data.submissionDate is string && data.submissionDate.size() >= 4 && data.submissionDate.size() <= 40
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    match /releases/{releaseId} {
+      allow get: if isSignedIn() && isValidId(releaseId) && (existing().submittedBy == request.auth.uid || isStaff());
+      allow list: if isSignedIn() && (resource.data.submittedBy == request.auth.uid || resource.data.distributorLabel == 'Music High Sky');
+      allow create: if isEmailVerified()
+        && isValidId(releaseId)
+        && isValidRelease(incoming())
+        && incoming().submittedBy == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (
+          isSuperAdmin() ||
+          incoming().status in ['Draft', 'Submitted']
+        );
+      allow update: if isEmailVerified()
+        && isValidId(releaseId)
+        && isValidRelease(incoming())
+        && incoming().submittedBy == existing().submittedBy
+        && incoming().releaseCode == existing().releaseCode
+        && incoming().releaseType == existing().releaseType
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          // Super Admin override (even on terminal Taken Down state)
+          (isSuperAdmin() && incoming().diff(existing()).affectedKeys().hasOnly([
+            'title', 'subtitle', 'primaryArtist', 'featuredArtist', 'singer', 'lyricist',
+            'composer', 'musicProducer', 'musicDirector', 'mixingEngineer', 'masteringEngineer',
+            'genre', 'subgenre', 'language', 'mood', 'explicitContent',
+            'originalReleaseDate', 'plannedReleaseDate', 'releaseTime',
+            'copyrightYear', 'copyrightOwner', 'phonographicCopyright', 'publishingCopyright',
+            'distributorLabel', 'artistCredit', 'labelCredit', 'creditNotes',
+            'targetPlatforms', 'status', 'reviewNotes', 'artworkPreview', 'smartLinkSlug',
+            'featured', 'driveFileId', 'sourceOrigin', 'updatedAt'
+          ])) ||
+          // Label Manager workflow review & schedule action (blocked once Taken Down)
+          (isLabelManager() && existing().status != 'Taken Down' && incoming().diff(existing()).affectedKeys().hasOnly([
+            'plannedReleaseDate', 'releaseTime', 'targetPlatforms', 'status', 'reviewNotes', 'smartLinkSlug', 'featured', 'updatedAt'
+          ])) ||
+          // Artist pre-approval artwork replacement
+          (existing().submittedBy == request.auth.uid
+            && existing().status in ['Draft', 'Submitted', 'Under Review', 'Metadata Correction Required']
+            && incoming().status == existing().status
+            && incoming().diff(existing()).affectedKeys().hasOnly(['artworkPreview', 'updatedAt'])) ||
+          // Artist metadata edit in Draft or Metadata Correction Required
+          (existing().submittedBy == request.auth.uid
+            && existing().status in ['Draft', 'Metadata Correction Required']
+            && incoming().status in ['Draft', 'Submitted']
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'title', 'subtitle', 'primaryArtist', 'featuredArtist', 'singer', 'lyricist',
+              'composer', 'musicProducer', 'musicDirector', 'mixingEngineer', 'masteringEngineer',
+              'genre', 'subgenre', 'language', 'mood', 'explicitContent',
+              'originalReleaseDate', 'plannedReleaseDate', 'releaseTime',
+              'copyrightYear', 'copyrightOwner', 'phonographicCopyright', 'publishingCopyright',
+              'artistCredit', 'labelCredit', 'creditNotes', 'targetPlatforms',
+              'status', 'artworkPreview', 'smartLinkSlug', 'updatedAt'
+            ]))
+        );
+      allow delete: if isEmailVerified() && isValidId(releaseId) && isSuperAdmin();
+    }
+
+    // ==================== 4. AUDIO TRACKS ====================
+    function isValidAudioTrack(data) {
+      return data.keys().hasAll(['releaseId', 'fileName', 'format', 'fileSizeBytes', 'validated', 'ownerId', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly([
+          'releaseId', 'fileName', 'format', 'fileSizeBytes', 'durationSeconds',
+          'sampleRate', 'channels', 'waveformPeaks', 'masterSourceUrl',
+          'storagePath', 'driveFileId',
+          'validated', 'ownerId', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.releaseId)
+        && data.fileName is string && data.fileName.size() >= 1 && data.fileName.size() <= 260
+        && data.format in ['WAV', 'FLAC', 'MP3']
+        && data.fileSizeBytes is number && data.fileSizeBytes >= 0 && data.fileSizeBytes <= 2000000000
+        && isOptNumber(data, 'durationSeconds', 0, 86400)
+        && isOptNumber(data, 'sampleRate', 0, 384000)
+        && isOptNumber(data, 'channels', 0, 16)
+        && (!('waveformPeaks' in data) || isNumberList(data.waveformPeaks, 128))
+        && isOptString(data, 'masterSourceUrl', 1000)
+        && isOptString(data, 'storagePath', 600)
+        && isOptString(data, 'driveFileId', 200)
+        && data.validated is bool
+        && isValidId(data.ownerId)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    match /audio_tracks/{trackId} {
+      allow get: if isSignedIn() && isValidId(trackId) && (existing().ownerId == request.auth.uid || isStaff());
+      allow list: if isSignedIn() && (resource.data.ownerId == request.auth.uid || resource.data.validated == true);
+      allow create: if isEmailVerified()
+        && isValidId(trackId)
+        && isValidAudioTrack(incoming())
+        && incoming().ownerId == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && exists(/databases/$(database)/documents/releases/$(incoming().releaseId));
+      allow update: if isEmailVerified()
+        && isValidId(trackId)
+        && isValidAudioTrack(incoming())
+        && incoming().ownerId == existing().ownerId
+        && incoming().releaseId == existing().releaseId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (isSuperAdmin() || existing().ownerId == request.auth.uid)
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'fileName', 'format', 'fileSizeBytes', 'durationSeconds', 'sampleRate',
+          'channels', 'waveformPeaks', 'masterSourceUrl', 'storagePath', 'driveFileId', 'validated', 'updatedAt'
+        ]);
+      allow delete: if isEmailVerified() && isValidId(trackId) && isSuperAdmin();
+    }
+
+    // ==================== 5. VIDEO RELEASES ====================
+    function isValidVideoRelease(data) {
+      return data.keys().hasAll(['releaseId', 'format', 'validated', 'ownerId', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly([
+          'releaseId', 'director', 'producer', 'productionCompany', 'description',
+          'fileName', 'format', 'fileSizeBytes', 'durationSeconds', 'resolution',
+          'youtubeUrl', 'videoCopyrightInfo', 'masterSourceUrl', 'storagePath', 'driveFileId',
+          'thumbnailPreview', 'validated', 'ownerId', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.releaseId)
+        && isOptString(data, 'director', 200)
+        && isOptString(data, 'producer', 200)
+        && isOptString(data, 'productionCompany', 200)
+        && isOptString(data, 'description', 3000)
+        && isOptString(data, 'fileName', 260)
+        && data.format in ['MP4', 'MOV', 'MKV', 'WEBM', 'EXTERNAL']
+        && isOptNumber(data, 'fileSizeBytes', 0, 10000000000)
+        && isOptNumber(data, 'durationSeconds', 0, 86400)
+        && isOptString(data, 'resolution', 40)
+        && isOptString(data, 'youtubeUrl', 500)
+        && isOptString(data, 'videoCopyrightInfo', 500)
+        && isOptString(data, 'masterSourceUrl', 1000)
+        && isOptString(data, 'storagePath', 600)
+        && isOptString(data, 'driveFileId', 200)
+        && isOptString(data, 'thumbnailPreview', 350000)
+        && data.validated is bool
+        && isValidId(data.ownerId)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    match /video_releases/{videoId} {
+      allow get: if isSignedIn() && isValidId(videoId) && (existing().ownerId == request.auth.uid || isStaff());
+      allow list: if isSignedIn() && (resource.data.ownerId == request.auth.uid || resource.data.validated == true);
+      allow create: if isEmailVerified()
+        && isValidId(videoId)
+        && isValidVideoRelease(incoming())
+        && incoming().ownerId == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && exists(/databases/$(database)/documents/releases/$(incoming().releaseId));
+      allow update: if isEmailVerified()
+        && isValidId(videoId)
+        && isValidVideoRelease(incoming())
+        && incoming().ownerId == existing().ownerId
+        && incoming().releaseId == existing().releaseId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (isSuperAdmin() || existing().ownerId == request.auth.uid)
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'director', 'producer', 'productionCompany', 'description',
+          'fileName', 'format', 'fileSizeBytes', 'durationSeconds', 'resolution',
+          'youtubeUrl', 'videoCopyrightInfo', 'masterSourceUrl', 'storagePath', 'driveFileId',
+          'thumbnailPreview', 'validated', 'updatedAt'
+        ]);
+      allow delete: if isEmailVerified() && isValidId(videoId) && isSuperAdmin();
+    }
+
+    // ==================== 6. ARTWORK ====================
+    function isValidArtwork(data) {
+      return data.keys().hasAll(['releaseId', 'kind', 'fileName', 'format', 'width', 'height', 'aspectRatioValid', 'ownerId', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly([
+          'releaseId', 'kind', 'fileName', 'format', 'width', 'height',
+          'aspectRatioValid', 'previewDataUrl', 'locked', 'ownerId', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.releaseId)
+        && data.kind in ['cover_art', 'video_thumbnail', 'promo_banner']
+        && data.fileName is string && data.fileName.size() >= 1 && data.fileName.size() <= 260
+        && data.format in ['JPG', 'JPEG', 'PNG']
+        && data.width is number && data.width >= 0 && data.width <= 20000
+        && data.height is number && data.height >= 0 && data.height <= 20000
+        && data.aspectRatioValid is bool
+        && isOptString(data, 'previewDataUrl', 350000)
+        && isOptBool(data, 'locked')
+        && isValidId(data.ownerId)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    match /artwork/{artworkId} {
+      allow get: if isSignedIn() && isValidId(artworkId) && (existing().ownerId == request.auth.uid || isStaff());
+      allow list: if isSignedIn() && (resource.data.ownerId == request.auth.uid || resource.data.kind in ['cover_art', 'video_thumbnail', 'promo_banner']);
+      allow create: if isEmailVerified()
+        && isValidId(artworkId)
+        && isValidArtwork(incoming())
+        && incoming().ownerId == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && exists(/databases/$(database)/documents/releases/$(incoming().releaseId));
+      allow update: if isEmailVerified()
+        && isValidId(artworkId)
+        && isValidArtwork(incoming())
+        && incoming().ownerId == existing().ownerId
+        && incoming().releaseId == existing().releaseId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          (isSuperAdmin() && incoming().diff(existing()).affectedKeys().hasOnly(['fileName', 'format', 'width', 'height', 'aspectRatioValid', 'previewDataUrl', 'locked', 'updatedAt'])) ||
+          (existing().ownerId == request.auth.uid && existing().locked != true && incoming().locked != true && incoming().diff(existing()).affectedKeys().hasOnly(['fileName', 'format', 'width', 'height', 'aspectRatioValid', 'previewDataUrl', 'updatedAt']))
+        );
+      allow delete: if isEmailVerified() && isValidId(artworkId) && isSuperAdmin();
+    }
+
+    // ==================== 7. PLAYLISTS ====================
+    function isValidPlaylist(data, playlistId) {
+      return data.keys().hasAll([
+          'id', 'slug', 'name', 'description', 'artistId', 'artistName', 'label',
+          'category', 'mediaKind', 'displayOrder', 'createdBy', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'slug', 'name', 'description', 'artistId', 'artistName', 'label',
+          'category', 'mediaKind', 'coverArtworkUrl', 'featured', 'displayOrder',
+          'autoRule', 'createdBy', 'updatedBy', 'createdAt', 'updatedAt'
+        ])
+        && data.id == playlistId && isValidId(data.id)
+        && data.slug is string && data.slug.size() >= 1 && data.slug.size() <= 120
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 160
+        && data.description is string && data.description.size() <= 1000
+        && isValidId(data.artistId)
+        && data.artistName is string && data.artistName.size() >= 1 && data.artistName.size() <= 120
+        && data.label is string && data.label.size() >= 1 && data.label.size() <= 120
+        && data.category in ['all_songs', 'latest', 'hindi', 'haryanvi', 'romantic', 'emotional', 'motivational', 'rap_cinematic', 'videos', 'custom']
+        && data.mediaKind in ['audio', 'video', 'mixed']
+        && isOptString(data, 'coverArtworkUrl', 350000)
+        && isOptBool(data, 'featured')
+        && data.displayOrder is number && data.displayOrder >= 0 && data.displayOrder <= 1000
+        && isOptString(data, 'autoRule', 120)
+        && isValidId(data.createdBy)
+        && isOptString(data, 'updatedBy', 128)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    match /playlists/{playlistId} {
+      allow get: if isSignedIn() && isValidId(playlistId);
+      allow list: if isSignedIn() && resource.data.label == 'Music High Sky';
+      allow create: if isEmailVerified()
+        && isValidId(playlistId)
+        && isValidPlaylist(incoming(), playlistId)
+        && incoming().createdBy == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && isStaff();
+      allow update: if isEmailVerified()
+        && isValidId(playlistId)
+        && isValidPlaylist(incoming(), playlistId)
+        && incoming().id == existing().id
+        && incoming().createdBy == existing().createdBy
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && isStaff()
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'name', 'description', 'coverArtworkUrl', 'featured', 'displayOrder',
+          'autoRule', 'category', 'mediaKind', 'updatedBy', 'updatedAt'
+        ]);
+      allow delete: if isEmailVerified() && isValidId(playlistId) && isSuperAdmin();
+    }
+
+    // ==================== 8. PLAYLIST TRACKS ====================
+    function isValidPlaylistTrack(data) {
+      return data.keys().hasAll(['playlistId', 'releaseId', 'position', 'addedBy', 'createdAt'])
+        && data.keys().hasOnly(['playlistId', 'releaseId', 'position', 'addedBy', 'createdAt'])
+        && isValidId(data.playlistId)
+        && isValidId(data.releaseId)
+        && data.position is number && data.position >= 0 && data.position <= 5000
+        && isValidId(data.addedBy)
+        && data.createdAt is timestamp;
+    }
+
+    match /playlist_tracks/{itemId} {
+      allow get: if isSignedIn() && isValidId(itemId);
+      allow list: if isSignedIn() && resource.data.position >= 0;
+      allow create: if isEmailVerified()
+        && isValidId(itemId)
+        && isValidPlaylistTrack(incoming())
+        && incoming().addedBy == request.auth.uid
+        && incoming().createdAt == request.time
+        && exists(/databases/$(database)/documents/playlists/$(incoming().playlistId))
+        && exists(/databases/$(database)/documents/releases/$(incoming().releaseId));
+      allow update: if isEmailVerified()
+        && isValidId(itemId)
+        && isValidPlaylistTrack(incoming())
+        && incoming().playlistId == existing().playlistId
+        && incoming().releaseId == existing().releaseId
+        && incoming().addedBy == existing().addedBy
+        && incoming().createdAt == existing().createdAt
+        && isStaff()
+        && incoming().diff(existing()).affectedKeys().hasOnly(['position']);
+      allow delete: if isEmailVerified() && isValidId(itemId) && (isStaff() || existing().addedBy == request.auth.uid);
+    }
+
+    // ==================== 9. MEDIA ASSETS (FIREBASE STORAGE REGISTRY) ====================
+    function isValidMediaAsset(data) {
+      return data.keys().hasAll([
+          'assetType', 'fileName', 'originalFileName', 'mimeType', 'fileSizeBytes',
+          'storagePath', 'downloadUrl', 'sourceType', 'metadataStatus',
+          'uploadedBy', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'assetType', 'fileName', 'originalFileName', 'mimeType', 'fileExtension',
+          'fileSizeBytes', 'storagePath', 'downloadUrl', 'sourceType', 'sourceUrl',
+          'driveFileId', 'linkedReleaseId', 'linkedArtistId', 'linkedPlaylistId',
+          'metadataStatus', 'uploadedBy', 'createdAt', 'updatedAt'
+        ])
+        && data.assetType in ['branding_logo', 'artist_photo', 'audio_song', 'video_song', 'album_artwork', 'playlist_cover']
+        && data.fileName is string && data.fileName.size() >= 1 && data.fileName.size() <= 260
+        && data.originalFileName is string && data.originalFileName.size() >= 1 && data.originalFileName.size() <= 260
+        && data.mimeType is string && data.mimeType.size() >= 1 && data.mimeType.size() <= 120
+        && isOptString(data, 'fileExtension', 20)
+        && data.fileSizeBytes is number && data.fileSizeBytes >= 0 && data.fileSizeBytes <= 10000000000
+        && data.storagePath is string && data.storagePath.size() >= 1 && data.storagePath.size() <= 600
+        && data.downloadUrl is string && data.downloadUrl.size() >= 1 && data.downloadUrl.size() <= 2000
+        && data.sourceType in ['google_drive', 'direct_upload', 'attached_catalog']
+        && isOptString(data, 'sourceUrl', 1000)
+        && isOptString(data, 'driveFileId', 200)
+        && isOptString(data, 'linkedReleaseId', 128)
+        && isOptString(data, 'linkedArtistId', 128)
+        && isOptString(data, 'linkedPlaylistId', 128)
+        && data.metadataStatus in ['verified', 'pending_verification']
+        && isValidId(data.uploadedBy)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    match /media_assets/{assetId} {
+      allow get: if isSignedIn() && isValidId(assetId);
+      allow list: if isSignedIn() && resource.data.assetType in ['branding_logo', 'artist_photo', 'audio_song', 'video_song', 'album_artwork', 'playlist_cover'];
+      allow create: if isEmailVerified()
+        && isValidId(assetId)
+        && isValidMediaAsset(incoming())
+        && incoming().uploadedBy == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && isStaff();
+      allow update: if isEmailVerified()
+        && isValidId(assetId)
+        && isValidMediaAsset(incoming())
+        && incoming().uploadedBy == existing().uploadedBy
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && isStaff()
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'linkedReleaseId', 'linkedArtistId', 'linkedPlaylistId', 'metadataStatus',
+          'downloadUrl', 'storagePath', 'updatedAt'
+        ]);
+      allow delete: if isEmailVerified() && isValidId(assetId) && isSuperAdmin();
+    }
+
+    // ==================== 10. IMPORT JOBS (GOOGLE DRIVE & CATALOG IMPORTS) ====================
+    function isValidImportJob(data) {
+      return data.keys().hasAll([
+          'sourceType', 'status', 'totalDiscovered', 'audioCount', 'videoCount',
+          'artworkCount', 'artistImageCount', 'brandingCount', 'importedCount',
+          'duplicateCount', 'failedCount', 'pendingVerificationCount', 'logsJson',
+          'triggeredBy', 'triggeredByName', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'sourceType', 'status', 'totalDiscovered', 'audioCount', 'videoCount',
+          'artworkCount', 'artistImageCount', 'brandingCount', 'importedCount',
+          'duplicateCount', 'failedCount', 'pendingVerificationCount', 'logsJson',
+          'triggeredBy', 'triggeredByName', 'createdAt', 'updatedAt'
+        ])
+        && data.sourceType in ['google_drive', 'attached_catalog']
+        && data.status in ['running', 'completed', 'completed_with_errors', 'failed']
+        && data.totalDiscovered is number && data.totalDiscovered >= 0 && data.totalDiscovered <= 50000
+        && data.audioCount is number && data.audioCount >= 0
+        && data.videoCount is number && data.videoCount >= 0
+        && data.artworkCount is number && data.artworkCount >= 0
+        && data.artistImageCount is number && data.artistImageCount >= 0
+        && data.brandingCount is number && data.brandingCount >= 0
+        && data.importedCount is number && data.importedCount >= 0
+        && data.duplicateCount is number && data.duplicateCount >= 0
+        && data.failedCount is number && data.failedCount >= 0
+        && data.pendingVerificationCount is number && data.pendingVerificationCount >= 0
+        && data.logsJson is string && data.logsJson.size() <= 450000
+        && isValidId(data.triggeredBy)
+        && data.triggeredByName is string && data.triggeredByName.size() >= 1 && data.triggeredByName.size() <= 120
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    match /import_jobs/{jobId} {
+      allow get: if isSignedIn() && isValidId(jobId) && isStaff();
+      allow list: if isSignedIn() && (isBootstrappedSuperAdmin() || isStaff() || resource.data.triggeredBy == request.auth.uid);
+      allow create: if isEmailVerified()
+        && isValidId(jobId)
+        && isValidImportJob(incoming())
+        && incoming().triggeredBy == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && isStaff();
+      allow update: if isEmailVerified()
+        && isValidId(jobId)
+        && isValidImportJob(incoming())
+        && incoming().triggeredBy == existing().triggeredBy
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && isStaff()
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'status', 'totalDiscovered', 'audioCount', 'videoCount', 'artworkCount',
+          'artistImageCount', 'brandingCount', 'importedCount', 'duplicateCount',
+          'failedCount', 'pendingVerificationCount', 'logsJson', 'updatedAt'
+        ]);
+      allow delete: if isEmailVerified() && isValidId(jobId) && isSuperAdmin();
+    }
+
+    // ==================== 11. DISTRIBUTION RECORDS ====================
+    function isValidDistributionRecord(data) {
+      return data.keys().hasAll(['releaseId', 'releaseTitle', 'releaseType', 'platformName', 'distributorLabel', 'status', 'ownerId', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly([
+          'releaseId', 'releaseTitle', 'releaseType', 'platformId', 'platformName',
+          'distributorLabel', 'partnerName', 'externalReferenceId', 'status',
+          'deliveryConfirmedDate', 'liveUrl', 'evidenceNotes', 'ownerId', 'updatedBy',
+          'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.releaseId)
+        && data.releaseTitle is string && data.releaseTitle.size() >= 1 && data.releaseTitle.size() <= 200
+        && data.releaseType in ['audio', 'video']
+        && isOptString(data, 'platformId', 80)
+        && data.platformName is string && data.platformName.size() >= 1 && data.platformName.size() <= 120
+        && data.distributorLabel is string && data.distributorLabel.size() >= 1 && data.distributorLabel.size() <= 120
+        && isOptString(data, 'partnerName', 150)
+        && isOptString(data, 'externalReferenceId', 150)
+        && data.status in ['Planned', 'Submitted to Partner', 'Processing', 'Delivered', 'Live', 'Rejected', 'Takedown Requested', 'Taken Down']
+        && isOptString(data, 'deliveryConfirmedDate', 40)
+        && isOptString(data, 'liveUrl', 500)
+        && isOptString(data, 'evidenceNotes', 1000)
+        && isValidId(data.ownerId)
+        && isOptString(data, 'updatedBy', 128)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    match /distribution_records/{recordId} {
+      allow get: if isSignedIn() && isValidId(recordId) && (existing().ownerId == request.auth.uid || isStaff());
+      allow list: if isSignedIn() && (resource.data.ownerId == request.auth.uid || resource.data.distributorLabel == 'Music High Sky');
+      allow create: if isEmailVerified()
+        && isValidId(recordId)
+        && isValidDistributionRecord(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && exists(/databases/$(database)/documents/releases/$(incoming().releaseId))
+        && (
+          isStaff() ||
+          (incoming().ownerId == request.auth.uid && incoming().status == 'Planned')
+        );
+      allow update: if isEmailVerified()
+        && isValidId(recordId)
+        && isValidDistributionRecord(incoming())
+        && incoming().releaseId == existing().releaseId
+        && incoming().ownerId == existing().ownerId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && isStaff()
+        && (existing().status != 'Taken Down' || isSuperAdmin())
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'partnerName', 'externalReferenceId', 'status', 'deliveryConfirmedDate',
+          'liveUrl', 'evidenceNotes', 'updatedBy', 'updatedAt'
+        ]);
+      allow delete: if isEmailVerified() && isValidId(recordId) && isSuperAdmin();
+    }
+
+    // ==================== 12. PLATFORMS ====================
+    function isValidPlatform(data, platformId) {
+      return data.keys().hasAll(['id', 'name', 'category', 'enabled', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'name', 'category', 'regionScope', 'serviceAvailabilityNote', 'enabled', 'createdAt', 'updatedAt'])
+        && data.id == platformId && isValidId(data.id)
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 120
+        && data.category in ['audio', 'video', 'both']
+        && isOptString(data, 'regionScope', 80)
+        && isOptString(data, 'serviceAvailabilityNote', 300)
+        && data.enabled is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    match /platforms/{platformId} {
+      allow get: if isSignedIn() && isValidId(platformId);
+      allow list: if isSignedIn() && resource.data.category in ['audio', 'video', 'both'];
+      allow create: if isEmailVerified()
+        && isValidId(platformId)
+        && isValidPlatform(incoming(), platformId)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && isSuperAdmin();
+      allow update: if isEmailVerified()
+        && isValidId(platformId)
+        && isValidPlatform(incoming(), platformId)
+        && incoming().id == existing().id
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && isSuperAdmin()
+        && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'category', 'regionScope', 'serviceAvailabilityNote', 'enabled', 'updatedAt']);
+      allow delete: if false;
+    }
+
+    // ==================== 13. ROYALTIES (VERIFIED REPORTS ONLY) ====================
+    function isValidRoyalty(data) {
+      return data.keys().hasAll([
+          'period', 'releaseTitle', 'platformName', 'currency', 'streams',
+          'estimatedRoyalty', 'confirmedRoyalty', 'paymentStatus', 'sourceType',
+          'verifiedBy', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'period', 'releaseId', 'releaseTitle', 'platformName', 'territory',
+          'currency', 'streams', 'estimatedRoyalty', 'confirmedRoyalty',
+          'paymentStatus', 'paymentReference', 'paidDate', 'sourceType',
+          'sourceReportName', 'verifiedBy', 'createdAt', 'updatedAt'
+        ])
+        && data.period is string && data.period.size() >= 4 && data.period.size() <= 20
+        && isOptString(data, 'releaseId', 128)
+        && data.releaseTitle is string && data.releaseTitle.size() >= 1 && data.releaseTitle.size() <= 200
+        && data.platformName is string && data.platformName.size() >= 1 && data.platformName.size() <= 120
+        && isOptString(data, 'territory', 100)
+        && data.currency in ['INR', 'USD']
+        && data.streams is number && data.streams >= 0
+        && data.estimatedRoyalty is number && data.estimatedRoyalty >= 0
+        && data.confirmedRoyalty is number && data.confirmedRoyalty >= 0
+        && data.paymentStatus in ['Estimated', 'Confirmed', 'Pending Payment', 'Paid']
+        && isOptString(data, 'paymentReference', 150)
+        && isOptString(data, 'paidDate', 40)
+        && data.sourceType in ['CSV Import', 'Manual Verified Entry']
+        && isOptString(data, 'sourceReportName', 200)
+        && data.verifiedBy is string && isValidId(data.verifiedBy)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    match /royalties/{royaltyId} {
+      allow get: if isSignedIn() && isValidId(royaltyId);
+      allow list: if isSignedIn() && resource.data.currency in ['INR', 'USD'];
+      allow create: if isEmailVerified()
+        && isValidId(royaltyId)
+        && isValidRoyalty(incoming())
+        && incoming().verifiedBy == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && isSuperAdmin();
+      allow update: if isEmailVerified()
+        && isValidId(royaltyId)
+        && isValidRoyalty(incoming())
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && isSuperAdmin()
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'estimatedRoyalty', 'confirmedRoyalty', 'paymentStatus', 'paymentReference', 'paidDate', 'updatedAt'
+        ]);
+      allow delete: if isEmailVerified() && isValidId(royaltyId) && isSuperAdmin();
+    }
+
+    // ==================== 14. ANALYTICS (VERIFIED REPORTS ONLY) ====================
+    function isValidAnalytics(data) {
+      return data.keys().hasAll(['period', 'releaseTitle', 'platformName', 'territory', 'streams', 'verifiedBy', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['period', 'releaseId', 'releaseTitle', 'platformName', 'territory', 'streams', 'sourceReportName', 'verifiedBy', 'createdAt', 'updatedAt'])
+        && data.period is string && data.period.size() >= 4 && data.period.size() <= 20
+        && isOptString(data, 'releaseId', 128)
+        && data.releaseTitle is string && data.releaseTitle.size() >= 1 && data.releaseTitle.size() <= 200
+        && data.platformName is string && data.platformName.size() >= 1 && data.platformName.size() <= 120
+        && data.territory is string && data.territory.size() >= 1 && data.territory.size() <= 100
+        && data.streams is number && data.streams >= 0
+        && isOptString(data, 'sourceReportName', 200)
+        && data.verifiedBy is string && isValidId(data.verifiedBy)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    match /analytics/{analyticsId} {
+      allow get: if isSignedIn() && isValidId(analyticsId);
+      allow list: if isSignedIn() && resource.data.streams >= 0;
+      allow create: if isEmailVerified()
+        && isValidId(analyticsId)
+        && isValidAnalytics(incoming())
+        && incoming().verifiedBy == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && isStaff();
+      allow update: if isEmailVerified()
+        && isValidId(analyticsId)
+        && isValidAnalytics(incoming())
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && isSuperAdmin()
+        && incoming().diff(existing()).affectedKeys().hasOnly(['streams', 'territory', 'platformName', 'sourceReportName', 'updatedAt']);
+      allow delete: if isEmailVerified() && isValidId(analyticsId) && isSuperAdmin();
+    }
+
+    // ==================== 15. COPYRIGHT RECORDS (ADMIN VERIFIED) ====================
+    function isValidCopyright(data) {
+      return data.keys().hasAll(['releaseTitle', 'contentIdStatus', 'takedownStatus', 'verifiedByAdmin', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly([
+          'releaseId', 'releaseTitle', 'songOwnership', 'masterRecordingRights',
+          'publishingRights', 'lyricsOwnership', 'compositionOwnership',
+          'registrationNumber', 'isrc', 'upcEan', 'contentIdStatus', 'contentIdAssetId',
+          'licensingNotes', 'distributionAgreementRef', 'takedownStatus', 'takedownNotes',
+          'verifiedByAdmin', 'verifiedByUid', 'createdAt', 'updatedAt'
+        ])
+        && isOptString(data, 'releaseId', 128)
+        && data.releaseTitle is string && data.releaseTitle.size() >= 1 && data.releaseTitle.size() <= 200
+        && isOptString(data, 'songOwnership', 250)
+        && isOptString(data, 'masterRecordingRights', 250)
+        && isOptString(data, 'publishingRights', 250)
+        && isOptString(data, 'lyricsOwnership', 250)
+        && isOptString(data, 'compositionOwnership', 250)
+        && isOptString(data, 'registrationNumber', 120)
+        && isOptString(data, 'isrc', 40)
+        && isOptString(data, 'upcEan', 40)
+        && data.contentIdStatus in ['Not Enrolled', 'Pending', 'Active', 'Disputed']
+        && isOptString(data, 'contentIdAssetId', 120)
+        && isOptString(data, 'licensingNotes', 1000)
+        && isOptString(data, 'distributionAgreementRef', 200)
+        && data.takedownStatus in ['None', 'Requested', 'In Progress', 'Completed']
+        && isOptString(data, 'takedownNotes', 500)
+        && data.verifiedByAdmin is bool
+        && isOptString(data, 'verifiedByUid', 128)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    match /copyright_records/{copyrightId} {
+      allow get: if isSignedIn() && isValidId(copyrightId);
+      allow list: if isSignedIn() && resource.data.contentIdStatus in ['Not Enrolled', 'Pending', 'Active', 'Disputed'];
+      allow create: if isEmailVerified()
+        && isValidId(copyrightId)
+        && isValidCopyright(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && isSuperAdmin();
+      allow update: if isEmailVerified()
+        && isValidId(copyrightId)
+        && isValidCopyright(incoming())
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && isSuperAdmin()
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'songOwnership', 'masterRecordingRights', 'publishingRights',
+          'lyricsOwnership', 'compositionOwnership', 'registrationNumber',
+          'isrc', 'upcEan', 'contentIdStatus', 'contentIdAssetId',
+          'licensingNotes', 'distributionAgreementRef', 'takedownStatus',
+          'takedownNotes', 'verifiedByAdmin', 'verifiedByUid', 'updatedAt'
+        ]);
+      allow delete: if isEmailVerified() && isValidId(copyrightId) && isSuperAdmin();
+    }
+
+    // ==================== 16. NOTIFICATIONS ====================
+    function isValidNotification(data) {
+      return data.keys().hasAll(['recipientRole', 'category', 'title', 'message', 'read', 'emailDispatchEnabled', 'actorUid', 'createdAt'])
+        && data.keys().hasOnly([
+          'recipientUid', 'recipientRole', 'category', 'title', 'message',
+          'releaseId', 'read', 'emailDispatchEnabled', 'actorUid', 'createdAt'
+        ])
+        && isOptString(data, 'recipientUid', 128)
+        && data.recipientRole in ['all', 'super_admin', 'artist', 'label_manager']
+        && data.category in [
+          'New Song Submission', 'Submission Received', 'Metadata Correction Required',
+          'Release Approved', 'Release Scheduled', 'Distribution Completed',
+          'Song Live on Platform', 'Royalty Report Available', 'Payment Status Updated'
+        ]
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 180
+        && data.message is string && data.message.size() >= 1 && data.message.size() <= 600
+        && isOptString(data, 'releaseId', 128)
+        && data.read is bool
+        && data.emailDispatchEnabled is bool
+        && isValidId(data.actorUid)
+        && data.createdAt is timestamp;
+    }
+
+    match /notifications/{notificationId} {
+      allow get: if isSignedIn() && isValidId(notificationId) && (
+        existing().recipientUid == request.auth.uid || existing().recipientRole == 'all' || isStaff()
+      );
+      allow list: if isSignedIn() && (
+        resource.data.recipientUid == request.auth.uid ||
+        resource.data.recipientRole in ['all', 'super_admin', 'artist', 'label_manager']
+      );
+      allow create: if isEmailVerified()
+        && isValidId(notificationId)
+        && isValidNotification(incoming())
+        && incoming().actorUid == request.auth.uid
+        && incoming().createdAt == request.time;
+      allow update: if isEmailVerified()
+        && isValidId(notificationId)
+        && isValidNotification(incoming())
+        && incoming().actorUid == existing().actorUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().diff(existing()).affectedKeys().hasOnly(['read']);
+      allow delete: if isEmailVerified() && isValidId(notificationId) && isSuperAdmin();
+    }
+
+    // ==================== 17. AUDIT LOGS (IMMUTABLE APPEND-ONLY) ====================
+    function isValidAuditLog(data) {
+      return data.keys().hasAll(['actorUid', 'actorName', 'actorRole', 'action', 'entityType', 'summary', 'createdAt'])
+        && data.keys().hasOnly(['actorUid', 'actorName', 'actorRole', 'action', 'entityType', 'entityId', 'summary', 'createdAt'])
+        && isValidId(data.actorUid)
+        && data.actorName is string && data.actorName.size() >= 1 && data.actorName.size() <= 120
+        && data.actorRole is string && data.actorRole.size() >= 1 && data.actorRole.size() <= 40
+        && data.action is string && data.action.size() >= 1 && data.action.size() <= 120
+        && data.entityType is string && data.entityType.size() >= 1 && data.entityType.size() <= 60
+        && isOptString(data, 'entityId', 128)
+        && data.summary is string && data.summary.size() >= 1 && data.summary.size() <= 500
+        && data.createdAt is timestamp;
+    }
+
+    match /audit_logs/{logId} {
+      allow get: if isSignedIn() && isValidId(logId) && (isStaff() || existing().actorUid == request.auth.uid);
+      allow list: if isSignedIn() && (resource.data.actorUid == request.auth.uid || isBootstrappedSuperAdmin() || isStaff());
+      allow create: if isEmailVerified()
+        && isValidId(logId)
+        && isValidAuditLog(incoming())
+        && incoming().actorUid == request.auth.uid
+        && incoming().createdAt == request.time;
+      allow update, delete: if false;
+    }
+
+    // ==================== 18. SETTINGS ====================
+    function isValidSettings(data, settingId) {
+      return data.keys().hasAll(['id', 'labelName', 'defaultArtistCredit', 'defaultLabelCredit', 'defaultCurrency', 'updatedAt'])
+        && data.keys().hasOnly([
+          'id', 'labelName', 'defaultArtistCredit', 'defaultLabelCredit',
+          'defaultCopyrightNotice', 'supportEmail', 'emailNotificationsEnabled',
+          'reminderDaysBeforeRelease', 'defaultCurrency', 'payoutGatewayLabel',
+          'partnerApiMode', 'brandLogoUrl', 'updatedBy', 'updatedAt'
+        ])
+        && data.id == settingId && isValidId(data.id)
+        && data.labelName is string && data.labelName.size() >= 1 && data.labelName.size() <= 120
+        && data.defaultArtistCredit is string && data.defaultArtistCredit.size() >= 1 && data.defaultArtistCredit.size() <= 120
+        && data.defaultLabelCredit is string && data.defaultLabelCredit.size() >= 1 && data.defaultLabelCredit.size() <= 120
+        && isOptString(data, 'defaultCopyrightNotice', 300)
+        && isOptString(data, 'supportEmail', 200)
+        && isOptBool(data, 'emailNotificationsEnabled')
+        && isOptNumber(data, 'reminderDaysBeforeRelease', 0, 90)
+        && data.defaultCurrency in ['INR', 'USD']
+        && isOptString(data, 'payoutGatewayLabel', 150)
+        && (!('partnerApiMode' in data) || data.partnerApiMode in ['Manual Partner Workflow', 'Partner Webhook Ready'])
+        && isOptString(data, 'brandLogoUrl', 2000)
+        && isOptString(data, 'updatedBy', 128)
+        && data.updatedAt is timestamp;
+    }
+
+    match /settings/{settingId} {
+      allow get: if isSignedIn() && isValidId(settingId);
+      allow list: if isSignedIn() && resource.data.id == 'platform';
+      allow create: if isEmailVerified()
+        && isValidId(settingId)
+        && isValidSettings(incoming(), settingId)
+        && incoming().updatedAt == request.time
+        && isSuperAdmin();
+      allow update: if isEmailVerified()
+        && isValidId(settingId)
+        && isValidSettings(incoming(), settingId)
+        && incoming().id == existing().id
+        && incoming().updatedAt == request.time
+        && isSuperAdmin()
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'labelName', 'defaultArtistCredit', 'defaultLabelCredit',
+          'defaultCopyrightNotice', 'supportEmail', 'emailNotificationsEnabled',
+          'reminderDaysBeforeRelease', 'defaultCurrency', 'payoutGatewayLabel',
+          'partnerApiMode', 'brandLogoUrl', 'updatedBy', 'updatedAt'
+        ]);
+      allow delete: if false;
+    }
+  }
+}

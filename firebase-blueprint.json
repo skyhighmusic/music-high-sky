@@ -1,0 +1,554 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Authenticated platform user with RBAC role assignment and isolated account metadata.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "email": { "type": "string", "format": "email", "maxLength": 200 },
+        "photoURL": { "type": "string", "maxLength": 1000 },
+        "role": { "type": "string", "enum": ["super_admin", "artist", "label_manager"] },
+        "status": { "type": "string", "enum": ["active", "suspended"] },
+        "emailNotifications": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "displayName", "email", "role", "status", "createdAt", "updatedAt"]
+    },
+    "Artist": {
+      "title": "Artist",
+      "description": "Official artist profile managed under Music High Sky (Sunil Kumar).",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "professions": { "type": "array", "description": "Up to 10 roles such as Musician, Singer, Lyricist, Independent Artist" },
+        "genres": { "type": "array", "description": "Up to 15 genres" },
+        "languages": { "type": "array", "description": "Up to 15 languages" },
+        "label": { "type": "string", "maxLength": 120 },
+        "primaryMarket": { "type": "string", "maxLength": 100 },
+        "distributionScope": { "type": "string", "maxLength": 100 },
+        "biography": { "type": "string", "maxLength": 4000 },
+        "profilePhotoUrl": { "type": "string", "maxLength": 350000 },
+        "spotifyUrl": { "type": "string", "maxLength": 500 },
+        "youtubeUrl": { "type": "string", "maxLength": 500 },
+        "instagramUrl": { "type": "string", "maxLength": 500 },
+        "facebookUrl": { "type": "string", "maxLength": 500 },
+        "updatedBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "professions", "genres", "languages", "label", "biography", "createdAt", "updatedAt"]
+    },
+    "Release": {
+      "title": "Release",
+      "description": "Master release document for either an Audio Song Release or Official Music Video.",
+      "type": "object",
+      "properties": {
+        "releaseCode": { "type": "string", "minLength": 3, "maxLength": 40 },
+        "releaseType": { "type": "string", "enum": ["audio", "video"] },
+        "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "subtitle": { "type": "string", "maxLength": 200 },
+        "primaryArtist": { "type": "string", "minLength": 1, "maxLength": 150 },
+        "featuredArtist": { "type": "string", "maxLength": 200 },
+        "singer": { "type": "string", "maxLength": 200 },
+        "lyricist": { "type": "string", "maxLength": 200 },
+        "composer": { "type": "string", "maxLength": 200 },
+        "musicProducer": { "type": "string", "maxLength": 200 },
+        "musicDirector": { "type": "string", "maxLength": 200 },
+        "mixingEngineer": { "type": "string", "maxLength": 200 },
+        "masteringEngineer": { "type": "string", "maxLength": 200 },
+        "genre": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "subgenre": { "type": "string", "maxLength": 100 },
+        "language": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "mood": { "type": "string", "maxLength": 100 },
+        "explicitContent": { "type": "boolean" },
+        "originalReleaseDate": { "type": "string", "maxLength": 40 },
+        "plannedReleaseDate": { "type": "string", "maxLength": 40 },
+        "releaseTime": { "type": "string", "maxLength": 20 },
+        "copyrightYear": { "type": "string", "maxLength": 10 },
+        "copyrightOwner": { "type": "string", "maxLength": 200 },
+        "phonographicCopyright": { "type": "string", "maxLength": 250 },
+        "publishingCopyright": { "type": "string", "maxLength": 250 },
+        "distributorLabel": { "type": "string", "maxLength": 120 },
+        "artistCredit": { "type": "string", "maxLength": 150 },
+        "labelCredit": { "type": "string", "maxLength": 150 },
+        "creditNotes": { "type": "string", "maxLength": 500 },
+        "targetPlatforms": { "type": "array", "description": "Up to 20 intended DSP names" },
+        "status": {
+          "type": "string",
+          "enum": [
+            "Draft",
+            "Submitted",
+            "Under Review",
+            "Metadata Correction Required",
+            "Approved",
+            "Scheduled",
+            "Processing",
+            "Delivered",
+            "Live",
+            "Rejected",
+            "Takedown Requested",
+            "Taken Down",
+            "Archived"
+          ]
+        },
+        "reviewNotes": { "type": "string", "maxLength": 1000 },
+        "artworkPreview": { "type": "string", "maxLength": 350000 },
+        "smartLinkSlug": { "type": "string", "maxLength": 120 },
+        "featured": { "type": "boolean" },
+        "driveFileId": { "type": "string", "maxLength": 200 },
+        "sourceOrigin": { "type": "string", "maxLength": 100 },
+        "submittedBy": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "submittedByName": { "type": "string", "maxLength": 120 },
+        "submissionDate": { "type": "string", "maxLength": 40 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "releaseCode",
+        "releaseType",
+        "title",
+        "primaryArtist",
+        "genre",
+        "language",
+        "distributorLabel",
+        "artistCredit",
+        "labelCredit",
+        "status",
+        "submittedBy",
+        "submissionDate",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "AudioTrack": {
+      "title": "AudioTrack",
+      "description": "Validated audio master metadata and waveform peaks linked to an audio release.",
+      "type": "object",
+      "properties": {
+        "releaseId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "fileName": { "type": "string", "minLength": 1, "maxLength": 260 },
+        "format": { "type": "string", "enum": ["WAV", "FLAC", "MP3"] },
+        "fileSizeBytes": { "type": "number" },
+        "durationSeconds": { "type": "number" },
+        "sampleRate": { "type": "number" },
+        "channels": { "type": "number" },
+        "waveformPeaks": { "type": "array", "description": "Up to 128 normalized peak floats" },
+        "masterSourceUrl": { "type": "string", "maxLength": 1000 },
+        "storagePath": { "type": "string", "maxLength": 600 },
+        "driveFileId": { "type": "string", "maxLength": 200 },
+        "validated": { "type": "boolean" },
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["releaseId", "fileName", "format", "fileSizeBytes", "validated", "ownerId", "createdAt", "updatedAt"]
+    },
+    "VideoRelease": {
+      "title": "VideoRelease",
+      "description": "Official music video production credits and validated video file metadata linked to a video release.",
+      "type": "object",
+      "properties": {
+        "releaseId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "director": { "type": "string", "maxLength": 200 },
+        "producer": { "type": "string", "maxLength": 200 },
+        "productionCompany": { "type": "string", "maxLength": 200 },
+        "description": { "type": "string", "maxLength": 3000 },
+        "fileName": { "type": "string", "maxLength": 260 },
+        "format": { "type": "string", "enum": ["MP4", "MOV", "MKV", "WEBM", "EXTERNAL"] },
+        "fileSizeBytes": { "type": "number" },
+        "durationSeconds": { "type": "number" },
+        "resolution": { "type": "string", "maxLength": 40 },
+        "youtubeUrl": { "type": "string", "maxLength": 500 },
+        "videoCopyrightInfo": { "type": "string", "maxLength": 500 },
+        "masterSourceUrl": { "type": "string", "maxLength": 1000 },
+        "storagePath": { "type": "string", "maxLength": 600 },
+        "driveFileId": { "type": "string", "maxLength": 200 },
+        "thumbnailPreview": { "type": "string", "maxLength": 350000 },
+        "validated": { "type": "boolean" },
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["releaseId", "format", "validated", "ownerId", "createdAt", "updatedAt"]
+    },
+    "Artwork": {
+      "title": "Artwork",
+      "description": "Cover artwork or video thumbnail asset metadata and compact preview.",
+      "type": "object",
+      "properties": {
+        "releaseId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "kind": { "type": "string", "enum": ["cover_art", "video_thumbnail", "promo_banner"] },
+        "fileName": { "type": "string", "minLength": 1, "maxLength": 260 },
+        "format": { "type": "string", "enum": ["JPG", "JPEG", "PNG"] },
+        "width": { "type": "number" },
+        "height": { "type": "number" },
+        "aspectRatioValid": { "type": "boolean" },
+        "previewDataUrl": { "type": "string", "maxLength": 350000 },
+        "locked": { "type": "boolean" },
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["releaseId", "kind", "fileName", "format", "width", "height", "aspectRatioValid", "ownerId", "createdAt", "updatedAt"]
+    },
+    "DistributionRecord": {
+      "title": "DistributionRecord",
+      "description": "Transparent per-DSP partner submission and confirmed delivery record.",
+      "type": "object",
+      "properties": {
+        "releaseId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "releaseTitle": { "type": "string", "maxLength": 200 },
+        "releaseType": { "type": "string", "enum": ["audio", "video"] },
+        "platformId": { "type": "string", "maxLength": 80 },
+        "platformName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "distributorLabel": { "type": "string", "maxLength": 120 },
+        "partnerName": { "type": "string", "maxLength": 150 },
+        "externalReferenceId": { "type": "string", "maxLength": 150 },
+        "status": {
+          "type": "string",
+          "enum": [
+            "Planned",
+            "Submitted to Partner",
+            "Processing",
+            "Delivered",
+            "Live",
+            "Rejected",
+            "Takedown Requested",
+            "Taken Down"
+          ]
+        },
+        "deliveryConfirmedDate": { "type": "string", "maxLength": 40 },
+        "liveUrl": { "type": "string", "maxLength": 500 },
+        "evidenceNotes": { "type": "string", "maxLength": 1000 },
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "updatedBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["releaseId", "releaseTitle", "releaseType", "platformName", "distributorLabel", "status", "ownerId", "createdAt", "updatedAt"]
+    },
+    "Platform": {
+      "title": "Platform",
+      "description": "Supported audio and video DSP destination directory.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 80, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "category": { "type": "string", "enum": ["audio", "video", "both"] },
+        "regionScope": { "type": "string", "maxLength": 80 },
+        "serviceAvailabilityNote": { "type": "string", "maxLength": 300 },
+        "enabled": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "category", "enabled", "createdAt", "updatedAt"]
+    },
+    "RoyaltyRecord": {
+      "title": "RoyaltyRecord",
+      "description": "Verified royalty statement record imported from CSV or entered from an authorized distributor report.",
+      "type": "object",
+      "properties": {
+        "period": { "type": "string", "minLength": 4, "maxLength": 20 },
+        "releaseId": { "type": "string", "maxLength": 128 },
+        "releaseTitle": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "platformName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "territory": { "type": "string", "maxLength": 100 },
+        "currency": { "type": "string", "enum": ["INR", "USD"] },
+        "streams": { "type": "number" },
+        "estimatedRoyalty": { "type": "number" },
+        "confirmedRoyalty": { "type": "number" },
+        "paymentStatus": { "type": "string", "enum": ["Estimated", "Confirmed", "Pending Payment", "Paid"] },
+        "paymentReference": { "type": "string", "maxLength": 150 },
+        "paidDate": { "type": "string", "maxLength": 40 },
+        "sourceType": { "type": "string", "enum": ["CSV Import", "Manual Verified Entry"] },
+        "sourceReportName": { "type": "string", "maxLength": 200 },
+        "verifiedBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["period", "releaseTitle", "platformName", "currency", "streams", "estimatedRoyalty", "confirmedRoyalty", "paymentStatus", "sourceType", "verifiedBy", "createdAt", "updatedAt"]
+    },
+    "AnalyticsRecord": {
+      "title": "AnalyticsRecord",
+      "description": "Verified streaming & geographic performance record from authorized DSP reports.",
+      "type": "object",
+      "properties": {
+        "period": { "type": "string", "minLength": 4, "maxLength": 20 },
+        "releaseId": { "type": "string", "maxLength": 128 },
+        "releaseTitle": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "platformName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "territory": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "streams": { "type": "number" },
+        "sourceReportName": { "type": "string", "maxLength": 200 },
+        "verifiedBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["period", "releaseTitle", "platformName", "territory", "streams", "verifiedBy", "createdAt", "updatedAt"]
+    },
+    "CopyrightRecord": {
+      "title": "CopyrightRecord",
+      "description": "Administrator-verified copyright, ISRC, UPC/EAN, Content ID, licensing, and takedown record.",
+      "type": "object",
+      "properties": {
+        "releaseId": { "type": "string", "maxLength": 128 },
+        "releaseTitle": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "songOwnership": { "type": "string", "maxLength": 250 },
+        "masterRecordingRights": { "type": "string", "maxLength": 250 },
+        "publishingRights": { "type": "string", "maxLength": 250 },
+        "lyricsOwnership": { "type": "string", "maxLength": 250 },
+        "compositionOwnership": { "type": "string", "maxLength": 250 },
+        "registrationNumber": { "type": "string", "maxLength": 120 },
+        "isrc": { "type": "string", "maxLength": 40 },
+        "upcEan": { "type": "string", "maxLength": 40 },
+        "contentIdStatus": { "type": "string", "enum": ["Not Enrolled", "Pending", "Active", "Disputed"] },
+        "contentIdAssetId": { "type": "string", "maxLength": 120 },
+        "licensingNotes": { "type": "string", "maxLength": 1000 },
+        "distributionAgreementRef": { "type": "string", "maxLength": 200 },
+        "takedownStatus": { "type": "string", "enum": ["None", "Requested", "In Progress", "Completed"] },
+        "takedownNotes": { "type": "string", "maxLength": 500 },
+        "verifiedByAdmin": { "type": "boolean" },
+        "verifiedByUid": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["releaseTitle", "contentIdStatus", "takedownStatus", "verifiedByAdmin", "createdAt", "updatedAt"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "In-app and email-flagged workflow notification.",
+      "type": "object",
+      "properties": {
+        "recipientUid": { "type": "string", "maxLength": 128 },
+        "recipientRole": { "type": "string", "enum": ["all", "super_admin", "artist", "label_manager"] },
+        "category": {
+          "type": "string",
+          "enum": [
+            "New Song Submission",
+            "Submission Received",
+            "Metadata Correction Required",
+            "Release Approved",
+            "Release Scheduled",
+            "Distribution Completed",
+            "Song Live on Platform",
+            "Royalty Report Available",
+            "Payment Status Updated"
+          ]
+        },
+        "title": { "type": "string", "minLength": 1, "maxLength": 180 },
+        "message": { "type": "string", "minLength": 1, "maxLength": 600 },
+        "releaseId": { "type": "string", "maxLength": 128 },
+        "read": { "type": "boolean" },
+        "emailDispatchEnabled": { "type": "boolean" },
+        "actorUid": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["recipientRole", "category", "title", "message", "read", "emailDispatchEnabled", "actorUid", "createdAt"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Append-only platform audit trail.",
+      "type": "object",
+      "properties": {
+        "actorUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "actorName": { "type": "string", "maxLength": 120 },
+        "actorRole": { "type": "string", "maxLength": 40 },
+        "action": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "entityType": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "entityId": { "type": "string", "maxLength": 128 },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["actorUid", "actorName", "actorRole", "action", "entityType", "summary", "createdAt"]
+    },
+    "PlatformSettings": {
+      "title": "PlatformSettings",
+      "description": "Music High Sky label defaults, email notification preferences, and payout gateway references.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 80 },
+        "labelName": { "type": "string", "maxLength": 120 },
+        "defaultArtistCredit": { "type": "string", "maxLength": 120 },
+        "defaultLabelCredit": { "type": "string", "maxLength": 120 },
+        "defaultCopyrightNotice": { "type": "string", "maxLength": 300 },
+        "supportEmail": { "type": "string", "maxLength": 200 },
+        "emailNotificationsEnabled": { "type": "boolean" },
+        "reminderDaysBeforeRelease": { "type": "number" },
+        "defaultCurrency": { "type": "string", "enum": ["INR", "USD"] },
+        "payoutGatewayLabel": { "type": "string", "maxLength": 150 },
+        "partnerApiMode": { "type": "string", "enum": ["Manual Partner Workflow", "Partner Webhook Ready"] },
+        "brandLogoUrl": { "type": "string", "maxLength": 2000 },
+        "updatedBy": { "type": "string", "maxLength": 128 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "labelName", "defaultArtistCredit", "defaultLabelCredit", "defaultCurrency", "updatedAt"]
+    },
+    "Playlist": {
+      "title": "Playlist",
+      "description": "Official Music High Sky curated playlist for Sunil Kumar.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "slug": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "description": { "type": "string", "maxLength": 1000 },
+        "artistId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "artistName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "label": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "category": { "type": "string", "enum": ["all_songs", "latest", "hindi", "haryanvi", "romantic", "emotional", "motivational", "rap_cinematic", "videos", "custom"] },
+        "mediaKind": { "type": "string", "enum": ["audio", "video", "mixed"] },
+        "coverArtworkUrl": { "type": "string", "maxLength": 350000 },
+        "featured": { "type": "boolean" },
+        "displayOrder": { "type": "number" },
+        "autoRule": { "type": "string", "maxLength": 120 },
+        "createdBy": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "updatedBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "slug", "name", "description", "artistId", "artistName", "label", "category", "mediaKind", "displayOrder", "createdBy", "createdAt", "updatedAt"]
+    },
+    "PlaylistTrack": {
+      "title": "PlaylistTrack",
+      "description": "Ordered association between an official playlist and a release record.",
+      "type": "object",
+      "properties": {
+        "playlistId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "releaseId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "position": { "type": "number" },
+        "addedBy": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["playlistId", "releaseId", "position", "addedBy", "createdAt"]
+    },
+    "MediaAsset": {
+      "title": "MediaAsset",
+      "description": "Firebase Storage file reference and provenance metadata for imported branding, artist photos, audio, video, and covers.",
+      "type": "object",
+      "properties": {
+        "assetType": { "type": "string", "enum": ["branding_logo", "artist_photo", "audio_song", "video_song", "album_artwork", "playlist_cover"] },
+        "fileName": { "type": "string", "minLength": 1, "maxLength": 260 },
+        "originalFileName": { "type": "string", "minLength": 1, "maxLength": 260 },
+        "mimeType": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "fileExtension": { "type": "string", "maxLength": 20 },
+        "fileSizeBytes": { "type": "number" },
+        "storagePath": { "type": "string", "minLength": 1, "maxLength": 600 },
+        "downloadUrl": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "sourceType": { "type": "string", "enum": ["google_drive", "direct_upload", "attached_catalog"] },
+        "sourceUrl": { "type": "string", "maxLength": 1000 },
+        "driveFileId": { "type": "string", "maxLength": 200 },
+        "linkedReleaseId": { "type": "string", "maxLength": 128 },
+        "linkedArtistId": { "type": "string", "maxLength": 128 },
+        "linkedPlaylistId": { "type": "string", "maxLength": 128 },
+        "metadataStatus": { "type": "string", "enum": ["verified", "pending_verification"] },
+        "uploadedBy": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["assetType", "fileName", "originalFileName", "mimeType", "fileSizeBytes", "storagePath", "downloadUrl", "sourceType", "metadataStatus", "uploadedBy", "createdAt", "updatedAt"]
+    },
+    "ImportJob": {
+      "title": "ImportJob",
+      "description": "Audit and telemetry record for Google Drive to Firebase Storage import jobs.",
+      "type": "object",
+      "properties": {
+        "sourceType": { "type": "string", "enum": ["google_drive", "attached_catalog"] },
+        "status": { "type": "string", "enum": ["running", "completed", "completed_with_errors", "failed"] },
+        "totalDiscovered": { "type": "number" },
+        "audioCount": { "type": "number" },
+        "videoCount": { "type": "number" },
+        "artworkCount": { "type": "number" },
+        "artistImageCount": { "type": "number" },
+        "brandingCount": { "type": "number" },
+        "importedCount": { "type": "number" },
+        "duplicateCount": { "type": "number" },
+        "failedCount": { "type": "number" },
+        "pendingVerificationCount": { "type": "number" },
+        "logsJson": { "type": "string", "maxLength": 450000 },
+        "triggeredBy": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "triggeredByName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["sourceType", "status", "totalDiscovered", "audioCount", "videoCount", "artworkCount", "artistImageCount", "brandingCount", "importedCount", "duplicateCount", "failedCount", "pendingVerificationCount", "logsJson", "triggeredBy", "triggeredByName", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "Private user profile and RBAC role document (PII restricted to owner or super_admin)."
+    },
+    "/artists/{artistId}": {
+      "schema": { "$ref": "#/entities/Artist" },
+      "description": "Official Music High Sky artist profiles (seeded with sunil-kumar)."
+    },
+    "/releases/{releaseId}": {
+      "schema": { "$ref": "#/entities/Release" },
+      "description": "Master audio and official music video release submissions."
+    },
+    "/audio_tracks/{trackId}": {
+      "schema": { "$ref": "#/entities/AudioTrack" },
+      "description": "Audio master validation metadata and waveform peak arrays."
+    },
+    "/video_releases/{videoId}": {
+      "schema": { "$ref": "#/entities/VideoRelease" },
+      "description": "Official music video production credits and video file metadata."
+    },
+    "/artwork/{artworkId}": {
+      "schema": { "$ref": "#/entities/Artwork" },
+      "description": "Validated cover art, thumbnails, and promo artwork assets."
+    },
+    "/playlists/{playlistId}": {
+      "schema": { "$ref": "#/entities/Playlist" },
+      "description": "Official curated playlists for Sunil Kumar under Music High Sky."
+    },
+    "/playlist_tracks/{itemId}": {
+      "schema": { "$ref": "#/entities/PlaylistTrack" },
+      "description": "Ordered track links mapping releases into playlists."
+    },
+    "/media_assets/{assetId}": {
+      "schema": { "$ref": "#/entities/MediaAsset" },
+      "description": "Firebase Storage media asset registry for branding, photos, audio, videos, and covers."
+    },
+    "/import_jobs/{jobId}": {
+      "schema": { "$ref": "#/entities/ImportJob" },
+      "description": "Google Drive and catalog import execution history, metrics, and retry logs."
+    },
+    "/distribution_records/{recordId}": {
+      "schema": { "$ref": "#/entities/DistributionRecord" },
+      "description": "Transparent per-DSP partner distribution status and evidence."
+    },
+    "/platforms/{platformId}": {
+      "schema": { "$ref": "#/entities/Platform" },
+      "description": "Supported audio and video DSP destinations."
+    },
+    "/royalties/{royaltyId}": {
+      "schema": { "$ref": "#/entities/RoyaltyRecord" },
+      "description": "Verified distributor royalty statements and payment statuses."
+    },
+    "/analytics/{analyticsId}": {
+      "schema": { "$ref": "#/entities/AnalyticsRecord" },
+      "description": "Verified platform-wise and geographic streaming metrics."
+    },
+    "/copyright_records/{copyrightId}": {
+      "schema": { "$ref": "#/entities/CopyrightRecord" },
+      "description": "Admin-verified copyright ownership, ISRC, UPC/EAN, and Content ID records."
+    },
+    "/notifications/{notificationId}": {
+      "schema": { "$ref": "#/entities/Notification" },
+      "description": "Workflow alerts and read state."
+    },
+    "/audit_logs/{logId}": {
+      "schema": { "$ref": "#/entities/AuditLog" },
+      "description": "Append-only security and workflow audit logs."
+    },
+    "/settings/{settingId}": {
+      "schema": { "$ref": "#/entities/PlatformSettings" },
+      "description": "Platform-wide configuration for Music High Sky."
+    }
+  }
+}

@@ -1,0 +1,90 @@
+rules_version = '2';
+
+// Firebase Storage Security Rules for Music High Sky (festive-network-wg33w.firebasestorage.app)
+// Deploy via Firebase Console -> Storage -> Rules to enable structured cloud media storage.
+service firebase.storage {
+  match /b/{bucket}/o {
+    // 1. Official Music High Sky Branding Assets (/music-high-sky/branding/...)
+    match /music-high-sky/branding/{fileName} {
+      allow read: if true;
+      allow write: if request.auth != null
+        && request.resource.size <= 15 * 1024 * 1024
+        && request.resource.contentType.matches('image/(jpeg|jpg|png|webp|svg\\+xml)');
+    }
+
+    // 2. Official Artist Profile Photographs (/music-high-sky/artists/sunil-kumar/...)
+    match /music-high-sky/artists/{artistSlug}/{fileName} {
+      allow read: if true;
+      allow write: if request.auth != null
+        && request.resource.size <= 15 * 1024 * 1024
+        && request.resource.contentType.matches('image/(jpeg|jpg|png|webp)');
+    }
+
+    // 3. Official Audio Song Masters (/music-high-sky/audio/sunil-kumar/song-files/...)
+    match /music-high-sky/audio/{artistSlug}/song-files/{fileName} {
+      allow read: if true;
+      allow write: if request.auth != null
+        && request.resource.size <= 250 * 1024 * 1024
+        && (
+          request.resource.contentType.matches('audio/.*') ||
+          request.resource.contentType == 'application/octet-stream'
+        );
+    }
+
+    // Legacy / release-code scoped audio path
+    match /music-high-sky/audio/{releaseCode}/{fileName} {
+      allow read: if true;
+      allow write: if request.auth != null
+        && request.resource.size <= 250 * 1024 * 1024
+        && request.resource.contentType.matches('audio/.*');
+    }
+
+    // 4. Official Music Videos (/music-high-sky/videos/sunil-kumar/video-files/...)
+    match /music-high-sky/videos/{artistSlug}/video-files/{fileName} {
+      allow read: if true;
+      allow write: if request.auth != null
+        && request.resource.size <= 500 * 1024 * 1024
+        && (
+          request.resource.contentType.matches('video/.*') ||
+          request.resource.contentType == 'application/octet-stream'
+        );
+    }
+
+    // Legacy / release-code scoped video path
+    match /music-high-sky/video/{releaseCode}/{fileName} {
+      allow read: if true;
+      allow write: if request.auth != null
+        && request.resource.size <= 500 * 1024 * 1024
+        && request.resource.contentType.matches('video/.*');
+    }
+
+    // 5. Album Cover Artwork (/music-high-sky/artwork/sunil-kumar/album-covers/...)
+    match /music-high-sky/artwork/{artistSlug}/album-covers/{fileName} {
+      allow read: if true;
+      allow write: if request.auth != null
+        && request.resource.size <= 15 * 1024 * 1024
+        && request.resource.contentType.matches('image/(jpeg|jpg|png|webp)');
+    }
+
+    // Legacy / release-code scoped artwork path
+    match /music-high-sky/artwork/{releaseCode}/{fileName} {
+      allow read: if true;
+      allow write: if request.auth != null
+        && request.resource.size <= 15 * 1024 * 1024
+        && request.resource.contentType.matches('image/(jpeg|jpg|png|webp)');
+    }
+
+    // 6. Official Playlist Covers (/music-high-sky/playlists/sunil-kumar/playlist-covers/...)
+    match /music-high-sky/playlists/{artistSlug}/playlist-covers/{fileName} {
+      allow read: if true;
+      allow write: if request.auth != null
+        && request.resource.size <= 15 * 1024 * 1024
+        && request.resource.contentType.matches('image/(jpeg|jpg|png|webp)');
+    }
+
+    // Deny all other paths by default
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

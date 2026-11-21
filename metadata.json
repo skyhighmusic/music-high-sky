@@ -1,0 +1,8 @@
+{
+  "name": "Music High Sky",
+  "description": "Official Digital Music Distribution & Artist Management Platform for independent artist Sunil Kumar — managing audio tracks, official music videos, release scheduling, transparent DSP distribution, verified royalties, copyright records, AI promotion, and branded reports.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
